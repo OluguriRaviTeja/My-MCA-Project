@@ -1,0 +1,101 @@
+import numpy as np
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("revised_kddcup_dataset.csv",index_col=0)
+print(df.head())
+
+tcp_syn_df = df[df.loc[:,"protocol_type"] == "tcp"]
+tcp_syn_df = tcp_syn_df[tcp_syn_df.loc[:,"srv_serror_rate"] > 0.7]
+
+print(tcp_syn_df.head())
+
+service_values = np.unique(tcp_syn_df.loc[:,"service"])
+
+mid = (len(service_values)+1)/2
+for i in range(len(service_values)):
+    tcp_syn_df = tcp_syn_df.replace(service_values[i], (i-mid)/10)
+
+print(tcp_syn_df.head()) 
+
+#I will be extracting all the important features as a "priority" for preprocessing
+features = ["service","src_bytes","wrong_fragment","count","num_compromised","srv_count","srv_serror_rate","serror_rate"]
+target = "result"
+
+X = tcp_syn_df.loc[:,features]
+y =tcp_syn_df.loc[:,target]
+
+classes = np.unique(y)
+print(classes)
+
+#replacing all classes of attack with 1 and normal result with 0 in our icmp_df
+for i in range(len(classes)):
+    if i == 2:
+        tcp_syn_df = tcp_syn_df.replace(classes[i], 0)
+    else:
+        tcp_syn_df = tcp_syn_df.replace(classes[i], 1)
+
+#turning the service attribute to categorical values
+tcp_syn_df=tcp_syn_df.replace("eco_i",-0.1)
+tcp_syn_df=tcp_syn_df.replace("ecr_i",0.0)
+tcp_syn_df=tcp_syn_df.replace("tim_i",0.1)
+tcp_syn_df=tcp_syn_df.replace("urp_i",0.2)
+
+print(tcp_syn_df.head())
+
+y =tcp_syn_df.loc[:,target]
+
+#I selected certain features but I will have to find some covariance between them so I will plot a covariance heatmap
+sns.heatmap(X.corr(), annot=True,cmap="RdBu")
+plt.plot()
+plt.show()
+#the data as seen is highly uncorrelated as most of it is one valued such as the duration one.
+
+from sklearn.ensemble import RandomForestClassifier
+rs = RandomForestClassifier()
+rs.fit(X,y)
+print(pd.Series(rs.feature_importances_,index=features).sort_values(ascending=False))
+
+#updated feature selection to release overfitting and accuracy improvement
+#in generalised prediction
+X = X.loc[:,["service","count","srv_count","src_bytes","serror_rate"]]
+for i in X.index:
+    if y[i] == 0:
+        print(i,":",X.loc[i,:])
+
+print(list(X.loc[136565 ,:]))#there are 5 attributes now
+print(y[136565 ])
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, test_size=0.3)
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
+
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+
+models = [LogisticRegression(), KNeighborsClassifier(n_neighbors=3),MLPClassifier(alpha=0.005),DecisionTreeClassifier()]
+classifiers = ["LR", "KNN","MLP","DecisionTree"]
+scores = []
+
+for model in models:
+    model.fit(X_train,y_train)
+    y_pred = model.predict(X_test)
+    score = accuracy_score(y_test, y_pred)*100
+    scores.append(score)
+    print("Accuracy of the model is: ", score)
+    conf_matrix = confusion_matrix(y_test,y_pred)
+    report = classification_report(y_test,y_pred)
+    print("Confusion Matrix:\n",conf_matrix)
+    print("Report:\n",report)
+    print("\n==============***===============")
+
+plt.plot(classifiers,scores)
+plt.title("TCP Sync Attack")
+plt.ylim(99.9,100)
+plt.show()               
